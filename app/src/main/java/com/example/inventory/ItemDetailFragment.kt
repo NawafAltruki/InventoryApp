@@ -17,14 +17,21 @@
 package com.example.inventory
 
 
+import android.app.ProgressDialog.show
+import android.content.ClipData
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
+import com.example.inventory.database.inventory.Inventory
+import com.example.inventory.database.inventory.getFormattedPrice
 import com.example.inventory.databinding.FragmentItemDetailBinding
+import com.example.inventory.viewmodel.InventoryViewModel
+import com.example.inventory.viewmodel.InventoryViewModelFactory
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
@@ -32,6 +39,15 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
  */
 class ItemDetailFragment : Fragment() {
     private val navigationArgs: ItemDetailFragmentArgs by navArgs()
+    private val viewModel: InventoryViewModel by activityViewModels {
+        InventoryViewModelFactory(
+            (activity?.application as InventoryApplication).database.inventoryDao()
+        )
+    }
+
+    lateinit var item: Inventory
+
+
 
     private var _binding: FragmentItemDetailBinding? = null
     private val binding get() = _binding!!
@@ -45,6 +61,30 @@ class ItemDetailFragment : Fragment() {
         return binding.root
     }
 
+    private fun bind(item: Inventory) {
+        binding.apply {
+            itemName.text = item.name
+            itemPrice.text = item.getFormattedPrice()
+            itemCount.text = item.quantity.toString()
+            // if quantity is 0 enable the sell button
+            sellItem.isEnabled = viewModel.isStockAvailable(item)
+            //sell
+            sellItem.setOnClickListener { viewModel.sellItem(item) }
+            //delete
+            deleteItem.setOnClickListener { showConfirmationDialog() }
+            // edit
+            editItem.setOnClickListener { editItem() }
+        }
+    }
+
+    private fun editItem() {
+        val action = ItemDetailFragmentDirections.actionItemDetailFragmentToAddItemFragment(
+            getString(R.string.edit_fragment_title),
+            item.id
+        )
+        this.findNavController().navigate(action)
+    }
+
     /**
      * Displays an alert dialog to get the user's confirmation before deleting the item.
      */
@@ -54,6 +94,7 @@ class ItemDetailFragment : Fragment() {
             .setMessage(getString(R.string.delete_question))
             .setCancelable(false)
             .setNegativeButton(getString(R.string.no)) { _, _ -> }
+            .setPositiveButton(getString(R.string.yes)) { _, _ -> }
             .setPositiveButton(getString(R.string.yes)) { _, _ ->
                 deleteItem()
             }
@@ -64,9 +105,19 @@ class ItemDetailFragment : Fragment() {
      * Deletes the current item and navigates to the list fragment.
      */
     private fun deleteItem() {
+        viewModel.deleteItem(item)
         findNavController().navigateUp()
     }
 
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        val id = navigationArgs.itemId
+        viewModel.retrieveItem(id).observe(this.viewLifecycleOwner) { selectedItem ->
+            item = selectedItem
+            bind(item)
+        }
+    }
     /**
      * Called when fragment is destroyed.
      */
